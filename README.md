@@ -1,5 +1,7 @@
 # Sunspot
 
+### Updated to support Ruby 3
+
 [![Gem Version](https://badge.fury.io/rb/sunspot.svg)](http://badge.fury.io/rb/sunspot)
 [![Build Status](https://secure.travis-ci.org/sunspot/sunspot.svg?branch=master)](http://travis-ci.org/sunspot/sunspot)
 
