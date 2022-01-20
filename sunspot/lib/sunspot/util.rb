@@ -1,10 +1,12 @@
+# frozen_string_literal: true
+
 module Sunspot
   #
   # The Sunspot::Util module provides utility methods used elsewhere in the
   # library.
   #
-  module Util #:nodoc:
-    class <<self
+  module Util # :nodoc:
+    class << self
       #
       # Get all of the superclasses for a given class, including the class
       # itself.
@@ -50,7 +52,7 @@ module Sunspot
       # String:: String in camel case
       #
       def camel_case(string)
-        string.split('_').map! { |word| word.capitalize }.join
+        string.split('_').map!(&:capitalize).join
       end
 
       #
@@ -66,7 +68,11 @@ module Sunspot
       #
       def method_case(string)
         first = true
-        string.split('_').map! { |word| word = first ? word : word.capitalize; first = false; word }.join
+        string.split('_').map! do |word|
+          word = first ? word : word.capitalize
+          first = false
+          word
+        end.join
       end
 
       #
@@ -96,8 +102,8 @@ module Sunspot
       # object<Object>:: Object to pass to the proc
       #
       def instance_eval_or_call(object, &block)
-        if block.arity > 0
-          block.call(object)
+        if block.arity.positive?
+          yield(object)
         else
           ContextBoundDelegate.instance_eval_with_context(object, &block)
         end
@@ -132,7 +138,7 @@ module Sunspot
       #
       def format_float(f, digits)
         if f < 1
-          sprintf('%.*f', digits - Math.log10(f), f)
+          format('%.*f', digits - Math.log10(f), f)
         else
           f.to_s
         end
@@ -185,13 +191,15 @@ module Sunspot
       def escape(value)
         # RSolr.solr_escape doesn't handle spaces or period chars,
         # which do need to be escaped
-        RSolr.solr_escape(value).gsub(/([\s\.])/, '\\\\\1')
+        RSolr.solr_escape(value).gsub(/([\s.])/, '\\\\\1')
       end
 
       def parse_json_facet(field_name, options, setup)
         field = setup.field(field_name)
         if options[:range] || options[:time_range]
-          unless [Sunspot::Type::TimeType, Sunspot::Type::FloatType, Sunspot::Type::IntegerType ].find{|type| field.type.is_a?(type)}
+          unless [Sunspot::Type::TimeType, Sunspot::Type::FloatType, Sunspot::Type::IntegerType].find do |type|
+                   field.type.is_a?(type)
+                 end
             raise(
               ArgumentError,
               ':range can only be specified for date, time, or numeric fields'
@@ -229,18 +237,17 @@ module Sunspot
       def deep_merge_into(destination, left, right)
         left.each_pair do |name, left_value|
           right_value = right[name] if right
-          destination[name] =
-            if right_value.nil? || left_value == right_value
-              left_value
-            elsif !left_value.respond_to?(:each_pair) || !right_value.respond_to?(:each_pair)
-              Array(left_value) + Array(right_value)
-            else
-              merged_value = {}
-              deep_merge_into(merged_value, left_value, right_value)
-            end
+          destination[name] = if right_value.nil? || left_value == right_value
+                                left_value
+                              elsif !left_value.respond_to?(:each_pair) || !right_value.respond_to?(:each_pair)
+                                Array(left_value) + Array(right_value)
+                              else
+                                merged_value = {}
+                                deep_merge_into(merged_value, left_value, right_value)
+                              end
         end
         left_keys = Set.new(left.keys)
-        destination.merge!(right.reject { |k, v| left_keys.include?(k) })
+        destination.merge!(right.reject { |k, _v| left_keys.include?(k) })
         destination
       end
     end
@@ -248,10 +255,12 @@ module Sunspot
     Coordinates = Struct.new(:lat, :lng)
 
     class ContextBoundDelegate
-      class <<self
+      class << self
         def instance_eval_with_context(receiver, &block)
-          calling_context = eval('self', block.binding)
-          if parent_calling_context = calling_context.instance_eval{@__calling_context__ if defined?(@__calling_context__)}
+          calling_context = eval('self', block.binding, __FILE__, __LINE__)
+          if parent_calling_context = calling_context.instance_eval do
+               @__calling_context__ if defined?(@__calling_context__)
+             end
             calling_context = parent_calling_context
           end
           new(receiver, calling_context).instance_eval(&block)
@@ -259,49 +268,44 @@ module Sunspot
         private :new
       end
 
-      BASIC_METHODS = Set[:==, :equal?, :"!", :"!=", :instance_eval,
+      BASIC_METHODS = Set[:==, :equal?, :!, :'!=', :instance_eval,
                           :object_id, :__send__, :__id__]
 
       instance_methods.each do |method|
-        unless BASIC_METHODS.include?(method.to_sym)
-          undef_method(method)
-        end
+        undef_method(method) unless BASIC_METHODS.include?(method.to_sym)
       end
 
       def initialize(receiver, calling_context)
-        @__receiver__, @__calling_context__ = receiver, calling_context
+        @__receiver__ = receiver
+        @__calling_context__ = calling_context
       end
 
       def id
+        @__calling_context__.__send__(:id)
+      rescue ::NoMethodError => e
         begin
-          @__calling_context__.__send__(:id)
-        rescue ::NoMethodError => e
-          begin
-            @__receiver__.__send__(:id)
-          rescue ::NoMethodError
-            raise(e)
-          end
+          @__receiver__.__send__(:id)
+        rescue ::NoMethodError
+          raise(e)
         end
       end
 
       # Special case due to `Kernel#sub`'s existence
-      def sub(*args, &block)
-        __proxy_method__(:sub, *args, &block)
+      def sub(...)
+        __proxy_method__(:sub, ...)
       end
 
-      def method_missing(method, *args, &block)
-        __proxy_method__(method, *args, &block)
+      def method_missing(method, ...)
+        __proxy_method__(method, ...)
       end
 
-      def __proxy_method__(method, *args, &block)
+      def __proxy_method__(method, ...)
+        @__receiver__.__send__(method.to_sym, ...)
+      rescue ::NoMethodError => e
         begin
-          @__receiver__.__send__(method.to_sym, *args, &block)
-        rescue ::NoMethodError => e
-          begin
-            @__calling_context__.__send__(method.to_sym, *args, &block)
-          rescue ::NoMethodError
-            raise(e)
-          end
+          @__calling_context__.__send__(method.to_sym, ...)
+        rescue ::NoMethodError
+          raise(e)
         end
       end
     end
