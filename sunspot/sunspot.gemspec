@@ -21,16 +21,10 @@ Gem::Specification.new do |s|
   TEXT
 
   s.files         = `git ls-files`.split("\n")
-  s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
-  s.executables   = `git ls-files -- bin/*`.split("\n").map{ |f| File.basename(f) }
   s.require_paths = ["lib"]
 
   s.add_dependency 'rsolr', '>= 1.1.1', '< 3'
   s.add_dependency 'pr_geohash', '~>1.0'
-
-  s.add_development_dependency 'rake', '< 12.3'
-  s.add_development_dependency 'rspec', '~> 3.7'
-  s.add_development_dependency 'appraisal', '2.2.0'
 
   s.rdoc_options << '--webcvs=http://github.com/outoftime/sunspot/tree/master/%s' <<
                   '--title' << 'Sunspot - Solr-powered search for Ruby objects - API Documentation' <<
